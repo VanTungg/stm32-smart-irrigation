@@ -1,0 +1,23 @@
+# Thư mục chứa file biên dịch
+build/
+Debug/
+Release/
+
+# File tạm của STM32CubeMX & IDE
+.mxproject
+*.log
+
+# File thực thi và kết quả biên dịch
+*.elf
+*.bin
+*.hex
+*.map
+*.o
+*.d
+*.su
+
+# Cấu hình cá nhân của VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
