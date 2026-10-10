@@ -21,6 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "rtc.h"
 
 /* USER CODE END Includes */
 
@@ -106,7 +107,7 @@ int main(void)
   MX_TIM2_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  RTC_Init_Module(); // SV2: Khởi tạo giờ 3h45m và lịch tưới
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -114,7 +115,7 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-
+   RTC_Update();
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -254,7 +255,7 @@ static void MX_I2C1_Init(void)
   * @param None
   * @retval None
   */
-static void MX_RTC_Init(void)
+static void MX_RTC_Init(void)//ham_set_rtc
 {
 
   /* USER CODE BEGIN RTC_Init 0 */
