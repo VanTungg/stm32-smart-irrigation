@@ -54,6 +54,9 @@ UART_HandleTypeDef huart1;
 /* USER CODE BEGIN PV */
 DHT11_Data dht_sensor;
 uint8_t dht_status = 0;
+
+uint32_t adc_raw = 0;  
+float adc_voltage = 0.0f;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -109,6 +112,7 @@ int main(void)
 /* USER CODE BEGIN 2 */
 Relay_Init();
 DHT11_Init();
+HAL_ADC_Start(&hadc1);
 /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -118,9 +122,10 @@ DHT11_Init();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    dht_status = DHT11_Read(&dht_sensor);
+    adc_raw = HAL_ADC_GetValue(&hadc1);
 
-        // Logic tự động thử nghiệm: Nếu nhiệt độ > 30°C thì bật bơm
+    adc_voltage = ((float)adc_raw * 3.3f) / 4095.0f;
+    dht_status = DHT11_Read(&dht_sensor);
         if (dht_status && (dht_sensor.temperature > 30.0f || dht_sensor.humidity < 50.0f)) {
             Relay_SetState(RELAY_ON);
         } else {
