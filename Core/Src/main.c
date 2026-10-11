@@ -107,7 +107,9 @@ int main(void)
   MX_TIM2_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-
+/* USER CODE BEGIN 2 */
+  Soil_Init(&soil, 4000, 1300); 
+  /* USER CODE END 2 */
   /* USER CODE END 2 */
 
   /* Infinite loop */

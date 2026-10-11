@@ -4,10 +4,13 @@
 #include "main.h"
 
 typedef struct {
-    uint16_t adc;     // Giá trị thanh ghi ADC (0 - 4095)
-    float    voltage; // Điện áp quy đổi (0.0V - 3.3V)
+    uint16_t dry; // Mốc khô (ADC = 4000)
+    uint16_t wet; // Mốc ướt (ADC = 1300)
+    uint16_t adc; // ADC lọc 50 mẫu
+    uint16_t  pct; // Độ ẩm % (0 - 100%)
 } SoilSensor;
 
+void Soil_Init(SoilSensor *s, uint16_t dry, uint16_t wet);
 void Soil_Read(ADC_HandleTypeDef *hadc, SoilSensor *s);
 
 #endif
