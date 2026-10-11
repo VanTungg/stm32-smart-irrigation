@@ -21,7 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "relay.h"
+#include "dht11.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -51,7 +52,8 @@ TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-
+DHT11_Data dht_sensor;
+uint8_t dht_status = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -77,7 +79,9 @@ static void MX_USART1_UART_Init(void);
   */
 int main(void)
 {
-
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -106,7 +110,8 @@ int main(void)
   MX_TIM2_Init();
   MX_USART1_UART_Init();
 /* USER CODE BEGIN 2 */
-
+Relay_Init();
+DHT11_Init();
 /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -116,9 +121,21 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
+    dht_status = DHT11_Read(&dht_sensor);
+
+        // Logic tự động thử nghiệm: Nếu nhiệt độ > 30°C thì bật bơm
+        if (dht_status && dht_sensor.temperature > 30.0f) {
+            Relay_SetState(RELAY_ON);
+        } else {
+            Relay_SetState(RELAY_OFF);
+        }
+
+        HAL_Delay(2000);
+    }
+
   /* USER CODE END 3 */
-}
+  }
+
 
 /**
   * @brief System Clock Configuration
