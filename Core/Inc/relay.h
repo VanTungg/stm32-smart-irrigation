@@ -3,7 +3,6 @@
 
 #include "stm32f1xx_hal.h"
 
-// Định nghĩa chân cắm Relay (PB0)
 #define RELAY_GPIO_PORT    GPIOB
 #define RELAY_PIN          GPIO_PIN_0
 
@@ -17,4 +16,4 @@ void Relay_SetState(Relay_State state);
 Relay_State Relay_GetState(void);
 void Relay_Toggle(void);
 
-#endif /* __RELAY_H */
+#endif

@@ -121,7 +121,7 @@ DHT11_Init();
     dht_status = DHT11_Read(&dht_sensor);
 
         // Logic tự động thử nghiệm: Nếu nhiệt độ > 30°C thì bật bơm
-        if (dht_status && dht_sensor.temperature > 30.0f) {
+        if (dht_status && (dht_sensor.temperature > 30.0f || dht_sensor.humidity < 50.0f)) {
             Relay_SetState(RELAY_ON);
         } else {
             Relay_SetState(RELAY_OFF);
