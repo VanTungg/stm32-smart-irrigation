@@ -115,7 +115,7 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-   RTC_Update();
+  RTC_Process();
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
