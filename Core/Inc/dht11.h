@@ -14,4 +14,4 @@ typedef struct {
 void DHT11_Init(void);
 uint8_t DHT11_Read(DHT11_Data *data);
 
-#endif /* __DHT11_H */
+#endif

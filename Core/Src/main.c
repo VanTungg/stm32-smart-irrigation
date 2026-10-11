@@ -79,9 +79,6 @@ static void MX_USART1_UART_Init(void);
   */
 int main(void)
 {
-    HAL_Init();
-    SystemClock_Config();
-    MX_GPIO_Init();
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
