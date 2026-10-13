@@ -12,6 +12,10 @@
                 "interface/stlink.cfg",
                 "target/stm32f1x.cfg"
             ],
+            "liveWatch": {
+                "enabled": true,
+                "samplesPerSecond": 4
+            },
             "runToEntryPoint": "main"
         }
     ]

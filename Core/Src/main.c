@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include "relay.h"
 #include "dht11.h"
+#include "uart_logger.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -113,6 +114,9 @@ int main(void)
 Relay_Init();
 DHT11_Init();
 HAL_ADC_Start(&hadc1);
+
+UART_Logger_Init(&huart1);
+LOG_I("=== HE THONG TUOI CAY TU DONG KHOT DONG ===");
 /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -123,17 +127,31 @@ HAL_ADC_Start(&hadc1);
 
     /* USER CODE BEGIN 3 */
     adc_raw = HAL_ADC_GetValue(&hadc1);
-
     adc_voltage = ((float)adc_raw * 3.3f) / 4095.0f;
     dht_status = DHT11_Read(&dht_sensor);
-        if (dht_status && (dht_sensor.temperature > 30.0f || dht_sensor.humidity < 50.0f)) {
+
+    if (dht_status) {
+        LOG_I("Nhiet do: %.1f C | Do am: %.1f %% | Do am dat (ADC): %.2f V",
+              dht_sensor.temperature, dht_sensor.humidity, adc_voltage);
+
+        if (dht_sensor.temperature > 30.0f || dht_sensor.humidity < 50.0f) {
+            if (Relay_GetState() == RELAY_OFF) {
+                LOG_W("CANH BAO: Nhiet do/Do am vuot nguong -> BAT BOM!");
+            }
             Relay_SetState(RELAY_ON);
         } else {
+            if (Relay_GetState() == RELAY_ON) {
+                LOG_I("Moi truong an toan -> TAT BOM.");
+            }
             Relay_SetState(RELAY_OFF);
         }
-
-        HAL_Delay(2000);
+    } else {
+        LOG_E("ERROR: Khong doc duoc du lieu tu cam bien DHT11!");
+        Relay_SetState(RELAY_OFF);
     }
+
+    HAL_Delay(2000);
+}
 
   /* USER CODE END 3 */
   }
