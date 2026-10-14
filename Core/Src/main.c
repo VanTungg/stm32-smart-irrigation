@@ -52,7 +52,7 @@ UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
 SoilSensor soil;
-uint32_t last_time = 0 ;
+uint32_t last_time = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -86,7 +86,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+ HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -110,16 +110,38 @@ int main(void)
 /* USER CODE BEGIN 2 */
   Soil_Init(&soil, 4000, 1300); 
   /* USER CODE END 2 */
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+  Soil_Init(&soil, 4000, 1300);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    if (HAL_GetTick() - last_time >= 200) {
+   // Cứ nửa giây thì đọc cảm biến 1 lần
+    if (HAL_GetTick() - last_time >= 500) {
         last_time = HAL_GetTick();
+
+        // Đọc dữ liệu
         Soil_Read(&hadc1, &soil);
+
+        if (soil.status == SOIL_ERROR) {
+            // Rút dây / Chập -> Tắt bơm ngay
+            HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+        } 
+        else {
+            // Không lỗi thì chạy Hysteresis
+            if (soil.soil_moisture < 40.0f) {
+                // Khô quá -> Bật
+                HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
+            } 
+            else if (soil.soil_moisture > 60.0f) {
+                // Đủ ướt -> Tắt
+                HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+            }
+        }
     }
+        
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
