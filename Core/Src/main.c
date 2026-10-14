@@ -56,8 +56,12 @@ UART_HandleTypeDef huart1;
 DHT11_Data dht_sensor;
 uint8_t dht_status = 0;
 
-uint32_t adc_raw = 0;  
+uint32_t adc_raw = 0;
 float adc_voltage = 0.0f;
+float soil_moisture = 0.0f;
+
+#define ADC_SOIL_DRY_VOLTAGE   3.0f  // Đất khô hoàn toàn (0%)
+#define ADC_SOIL_WET_VOLTAGE   1.2f // Đất ẩm hoàn toàn (100%)
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -69,7 +73,11 @@ static void MX_RTC_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
-
+static float Calculate_Soil_Moisture_Pct(float voltage) {
+    if (voltage >= ADC_SOIL_DRY_VOLTAGE) return 0.0f;
+    if (voltage <= ADC_SOIL_WET_VOLTAGE) return 100.0f;
+    return ((ADC_SOIL_DRY_VOLTAGE - voltage) / (ADC_SOIL_DRY_VOLTAGE - ADC_SOIL_WET_VOLTAGE)) * 100.0f;
+}
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -111,12 +119,11 @@ int main(void)
   MX_TIM2_Init();
   MX_USART1_UART_Init();
 /* USER CODE BEGIN 2 */
-Relay_Init();
-DHT11_Init();
-HAL_ADC_Start(&hadc1);
-
-UART_Logger_Init(&huart1);
-LOG_I("=== HE THONG TUOI CAY TU DONG KHOT DONG ===");
+  Relay_Init();
+  DHT11_Init();
+  HAL_ADC_Start(&hadc1);
+  UART_Logger_Init(&huart1);
+  LOG_I("=== HE THONG TUOI CAY TU DONG KHOT DONG ===");
 /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -126,36 +133,85 @@ LOG_I("=== HE THONG TUOI CAY TU DONG KHOT DONG ===");
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    // BƯỚC 1: ĐỌC DỮ LIỆU CẢM BIẾN VÀ CẬP NHẬT TRẠNG THÁI
+
     adc_raw = HAL_ADC_GetValue(&hadc1);
     adc_voltage = ((float)adc_raw * 3.3f) / 4095.0f;
+    soil_moisture = Calculate_Soil_Moisture_Pct(adc_voltage);
     dht_status = DHT11_Read(&dht_sensor);
 
-    if (dht_status) {
-        LOG_I("Nhiet do: %.1f C | Do am: %.1f %% | Do am dat (ADC): %.2f V",
-              dht_sensor.temperature, dht_sensor.humidity, adc_voltage);
+    uint8_t is_water_ok = (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_2) == GPIO_PIN_RESET);
 
-        if (dht_sensor.temperature > 30.0f || dht_sensor.humidity < 50.0f) {
-            if (Relay_GetState() == RELAY_OFF) {
-                LOG_W("CANH BAO: Nhiet do/Do am vuot nguong -> BAT BOM!");
-            }
-            Relay_SetState(RELAY_ON);
-        } else {
-            if (Relay_GetState() == RELAY_ON) {
-                LOG_I("Moi truong an toan -> TAT BOM.");
-            }
-            Relay_SetState(RELAY_OFF);
-        }
-    } else {
-        LOG_E("ERROR: Khong doc duoc du lieu tu cam bien DHT11!");
+    // BƯỚC 2: KIỂM TRA ĐIỀU KIỆN AN TOÀN
+    
+    // 2.1 Cảm biến bị lỗi hoặc tuột dây 
+    if (dht_status == 0 || adc_voltage < 0.1f || adc_voltage > 3.25f) {
         Relay_SetState(RELAY_OFF);
+        LOG_E("LOI CAM BIEN: Khong the xac dinh trang thai dat/khong khi tin cay -> TAT BOM AN TOAN.");
+    }
+
+    // 2.2 Bể chứa hết nước / Mực nước quá thấp 
+    else if (!is_water_ok) {
+        Relay_SetState(RELAY_OFF);
+        LOG_E("LOI: Be chua het nuoc hoac muc nuoc qua thap -> KHOA BOM CHONG CHAY KHO.");
+    }
+
+    // 2.3 Cảnh báo đặc biệt chống sốc nhiệt (Nhiệt độ > 38°C)
+    else if (dht_sensor.temperature > 38.0f) {
+        Relay_SetState(RELAY_OFF);
+        LOG_W("CANH BAO SOC NHIET: Nhiet do (%.1f C > 38 C) -> TAT BOM TRANH SOC NHIET CAY!", 
+              dht_sensor.temperature);
+    }
+
+    // BƯỚC 3: ĐIỀU KHIỂN BƠM THEO MỨC ƯU TIÊN (CHỈ CHẠY KHI AN TOÀN)
+
+    else {
+        float T = dht_sensor.temperature;
+        float H_air = dht_sensor.humidity;
+        float Soil = soil_moisture;
+
+        // NHÓM 1: ĐÃ ĐẠT ĐỘ ẨM ĐẤT MỤC TIÊU (Soil >= 60%) -> TẮT BƠM
+        if (Soil >= 60.0f) {
+            Relay_SetState(RELAY_OFF);
+            LOG_I("Dat dat do am muc tieu (%.1f%% >= 60%%) -> TAT BOM", Soil);
+        }
+
+        // NHÓM 2: ĐẤT KHÔ (Soil < 40%) -> BẬT BƠM 
+        else if (Soil < 40.0f) {
+            Relay_SetState(RELAY_ON);
+            LOG_I("Dat kho (%.1f%% < 40%%) -> BAT BOM", Soil);
+        }
+
+        // NHÓM 3: ĐẤT TRUNG BÌNH (40% <= Soil < 60%)
+        else if (T <= 32.0f && H_air >= 30.0f) {
+            Relay_State current_p = Relay_GetState();
+            LOG_I("Tiep tuc theo doi | Dat: %.1f%% (40-60%%) -> GIU TRANG THAI BOM (%s)",
+                  Soil, (current_p == RELAY_ON) ? "DANG BOM" : "TAT BOM");
+        }
+
+        // NHÓM 4: ĐẤT TRUNG BÌNH (40% <= Soil < 60%)
+        else {
+            uint8_t is_air_dry = (H_air < 30.0f);
+            uint8_t is_temp_high = (T > 32.0f);
+
+            if (is_air_dry || is_temp_high) {
+                Relay_SetState(RELAY_ON);
+
+                if (is_temp_high && is_air_dry) {
+                    LOG_W("Canh bao nong va khong khi kho | Dat: %.1f%% (40-60%%) -> BAT BOM", Soil);
+                } else if (is_temp_high) {
+                    LOG_W("Canh bao nhiet do cao | Dat: %.1f%% (40-60%%) -> BAT BOM", Soil);
+                } else {
+                    LOG_W("Canh bao khong khi kho | Dat: %.1f%% (40-60%%) -> BAT BOM", Soil);
+                }
+            }
+        }
     }
 
     HAL_Delay(2000);
-}
-
-  /* USER CODE END 3 */
   }
-
+  /* USER CODE END 3 */
+}
 
 /**
   * @brief System Clock Configuration
@@ -232,7 +288,7 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.NbrOfConversion = 1;
-  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  if (HAL_ADC_Init(&hadc1) != HAL_OK) 
   {
     Error_Handler();
   }
