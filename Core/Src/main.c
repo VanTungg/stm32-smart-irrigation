@@ -21,7 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "btn.h"
+#include "lcd_i2c.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -51,7 +52,21 @@ TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
+static LCD_Handle_t lcd;
 
+/* Bien debug: xem trong Watch khi chay F5 */
+volatile uint8_t  lcd_probe_27_ok;
+volatile uint8_t  lcd_probe_3F_ok;
+volatile uint8_t  lcd_i2c_scan_done;
+volatile uint8_t  lcd_i2c_found_count;
+volatile uint8_t  lcd_i2c_found_addr = 0xFFU;
+volatile uint8_t  lcd_debug_state;
+volatile uint8_t  lcd_debug_ready;
+volatile uint8_t  lcd_debug_init_step;
+volatile uint16_t lcd_debug_error_count;
+volatile uint32_t lcd_debug_i2c_error;
+volatile uint32_t lcd_debug_i2c_state;
+volatile uint8_t  debug_error_handler_hit;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -102,10 +117,76 @@ int main(void)
   MX_GPIO_Init();
   MX_ADC1_Init();
   MX_I2C1_Init();
+
+  /* Kiem tra 2 dia chi thuong gap. */
+  lcd_probe_27_ok = (HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(0x27U << 1), 1U, 5U) == HAL_OK) ? 1U : 0U;
+  lcd_probe_3F_ok = (HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(0x3FU << 1), 1U, 5U) == HAL_OK) ? 1U : 0U;
+
+  /* Quet cac dia chi hop le pho bien cua PCF8574 (0x20-0x27)
+     va PCF8574A (0x38-0x3F). Khong dung HAL_Delay(). */
+  lcd_i2c_scan_done = 0U;
+  lcd_i2c_found_count = 0U;
+  lcd_i2c_found_addr = 0xFFU;
+
+  for (uint8_t addr7 = 0x20U; addr7 <= 0x27U; addr7++) {
+      if (HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(addr7 << 1), 1U, 5U) == HAL_OK) {
+          if (lcd_i2c_found_count == 0U) {
+              lcd_i2c_found_addr = addr7;
+          }
+          if (lcd_i2c_found_count < 0xFFU) {
+              lcd_i2c_found_count++;
+          }
+      }
+  }
+
+  for (uint8_t addr7 = 0x38U; addr7 <= 0x3FU; addr7++) {
+      if (HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(addr7 << 1), 1U, 5U) == HAL_OK) {
+          if (lcd_i2c_found_count == 0U) {
+              lcd_i2c_found_addr = addr7;
+          }
+          if (lcd_i2c_found_count < 0xFFU) {
+              lcd_i2c_found_count++;
+          }
+      }
+  }
+  lcd_i2c_scan_done = 1U;
+
   MX_RTC_Init();
   MX_TIM2_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
+    /* Khởi tạo LCD I2C */
+    uint8_t lcdAddr7 = LCD_I2C_ADDR_7BIT;
+    if (lcd_i2c_found_count > 0U) {
+        lcdAddr7 = lcd_i2c_found_addr;
+    }
+
+    BTN_Init(HAL_GetTick());                         /* đọc trạng thái ban đầu của 5 nút */
+    LCD_Init(&lcd, &hi2c1, lcdAddr7, HAL_GetTick()); /* khởi tạo LCD không chặn */
+
+  /* ----- DỮ LIỆU GIẢ ĐỂ THỬ GIAO DIỆN (không phải dữ liệu cảm biến/RTC thật) ----- */
+  {
+    /* Ngày, tháng, năm, giờ, phút, giây đều bằng 0 theo yêu cầu kiểm thử.
+     * Dữ liệu này chỉ nằm trong RAM, KHÔNG ghi xuống đồng hồ thật. */
+    const LCD_Time_t testTime = { 0, 0, 0, 0, 0, 0 };
+    LCD_SetTime(&lcd, &testTime);
+
+    /* Nhiệt độ, độ ẩm không khí, độ ẩm đất, mực nước = 0 */
+    const LCD_Sensor_t testSensor = { 0, 0, 0, 0 };
+    LCD_UpdateSensor(&lcd, &testSensor);
+
+    /* Ngưỡng Tg, Hg, Mg = 0. Chế độ mặc định: AUTO. Yêu cầu bơm ở chế độ MANU: OFF.
+     * (Chọn AUTO làm mặc định vì an toàn: không có thao tác bật bơm nào do người dùng
+     *  tình cờ gây ra khi mới khởi động.) */
+    const LCD_Setting_t testSetting = { 0, 0, 0, LCD_PUMP_AUTO, 0 };
+    LCD_SetSetting(&lcd, &testSetting);
+
+    /* Hai lịch tưới mẫu hợp lệ: {giờ, phút, bật/tắt} */
+    const LCD_Schedule_t sched1 = {  6, 30, 1 };   /* 06:30 ON  */
+    const LCD_Schedule_t sched2 = { 18,  0, 0 };   /* 18:00 OFF */
+    LCD_SetSchedule(&lcd, 0, &sched1);
+    LCD_SetSchedule(&lcd, 1, &sched2);
+  }
 
   /* USER CODE END 2 */
 
@@ -114,6 +195,31 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
+    uint32_t now = HAL_GetTick();                  /* 1. Lấy thời gian hiện tại           */
+
+    BTN_Scan(now);                                 /* 2. Quét nút + chống dội             */
+    Btn_Event_t evt = BTN_GetEvent();              /* 3. Lấy 1 sự kiện nhấn hợp lệ (nếu có) */
+    if (evt != BTN_EVT_NONE) {
+        LCD_HandleEvent(&lcd, evt, now);           /* 4. Chuyển cho bộ điều khiển giao diện */
+    }
+    LCD_Task(&lcd, now);                           /* 5. Cập nhật LCD (tối đa 1 byte I2C)   */
+
+    /* Bien debug cap nhat lien tuc de xem trong cua so Watch */
+    lcd_debug_state       = (uint8_t)lcd.drv;       /* 0=INIT, 1=READY, 2=ERROR */
+    lcd_debug_ready       = LCD_IsReady(&lcd);      /* 1=LCD da khoi tao xong */
+    lcd_debug_init_step   = lcd.initStep;
+    lcd_debug_error_count = lcd.errCount;
+    lcd_debug_i2c_error   = hi2c1.ErrorCode;
+    lcd_debug_i2c_state   = (uint32_t)hi2c1.State;
+
+    /* 6. Các công việc khác của hệ thống (DHT11, ADC, RTC, bơm...) đặt ở đây.
+     *
+     *    Khi có cảm biến thật:   LCD_UpdateSensor(&lcd, &sensorData);
+     *    Khi có RTC thật:        mỗi giây gọi LCD_SetTime(&lcd, &rtcTime);
+     *                            LCD_Time_t t; if (LCD_TimeSaved(&lcd, &t)) { ghi t xuống RTC; }
+     *    Khi có module bơm:      đọc LCD_GetSetting(&lcd)->mode / ->pumpOn / ngưỡng
+     *                            và LCD_GetSchedule(&lcd, 0 hoặc 1).
+     */
 
     /* USER CODE BEGIN 3 */
   }
@@ -409,8 +515,10 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_8, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PA0 PA2 PA3 PA4 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_4;
+  /*Configure GPIO pins : PA0 PA2 PA3 PA4
+                           PA5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_4
+                          |GPIO_PIN_5;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
@@ -437,6 +545,7 @@ static void MX_GPIO_Init(void)
   */
 void Error_Handler(void)
 {
+  debug_error_handler_hit = 1U;
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
