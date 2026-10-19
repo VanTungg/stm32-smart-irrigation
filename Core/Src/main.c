@@ -21,10 +21,15 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+<<<<<<< HEAD
 #include "relay.h"
 #include "dht11.h"
 #include "uart_logger.h"
 #include "soil_sensor.h"
+=======
+#include "rtc.h"
+
+>>>>>>> origin/feature/rtc-clock
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -129,11 +134,15 @@ int main(void)
   LOG_I("=== HE THONG TUOI CAY TU DONG KHOT DONG ===");
 /* USER CODE END 2 */
   /* USER CODE BEGIN 2 */
+<<<<<<< HEAD
 /* USER CODE BEGIN 2 */
   Soil_Init(&soil, 4000, 1300); 
   /* USER CODE END 2 */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
   Soil_Init(&soil, 4000, 1300);
+=======
+  RTC_Init_Module(); // SV2: Khởi tạo giờ 3h45m và lịch tưới
+>>>>>>> origin/feature/rtc-clock
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -165,7 +174,7 @@ int main(void)
     }
         
     /* USER CODE END WHILE */
-
+  RTC_Process();
     /* USER CODE BEGIN 3 */
     // BƯỚC 1: ĐỌC DỮ LIỆU CẢM BIẾN VÀ CẬP NHẬT TRẠNG THÁI
 
@@ -381,7 +390,7 @@ static void MX_I2C1_Init(void)
   * @param None
   * @retval None
   */
-static void MX_RTC_Init(void)
+static void MX_RTC_Init(void)//ham_set_rtc
 {
 
   /* USER CODE BEGIN RTC_Init 0 */
