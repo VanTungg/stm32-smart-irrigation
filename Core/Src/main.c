@@ -21,15 +21,13 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-<<<<<<< HEAD
 #include "relay.h"
 #include "dht11.h"
 #include "uart_logger.h"
 #include "soil_sensor.h"
-=======
 #include "rtc.h"
-
->>>>>>> origin/feature/rtc-clock
+#include "btn.h"
+#include "lcd_i2c.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -49,27 +47,21 @@
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
-
+ADC_HandleTypeDef hadc2;
 I2C_HandleTypeDef hi2c1;
-
 RTC_HandleTypeDef hrtc;
-
 TIM_HandleTypeDef htim2;
-
 UART_HandleTypeDef huart1;
-
 /* USER CODE BEGIN PV */
 DHT11_Data dht_sensor;
 uint8_t dht_status = 0;
-
-uint32_t adc_raw = 0;
-float adc_voltage = 0.0f;
-float soil_moisture = 0.0f;
-
-#define ADC_SOIL_DRY_VOLTAGE   3.0f  // Đất khô hoàn toàn (0%)
-#define ADC_SOIL_WET_VOLTAGE   1.2f // Đất ẩm hoàn toàn (100%)
 SoilSensor soil;
-uint32_t last_time = 0;
+uint32_t adc_water_raw = 0;
+float water_level_pct = 0.0f; 
+
+uint32_t last_sensor_time = 0;
+static LCD_Handle_t lcd;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -80,11 +72,20 @@ static void MX_I2C1_Init(void);
 static void MX_RTC_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_ADC2_Init(void);
 /* USER CODE BEGIN PFP */
-static float Calculate_Soil_Moisture_Pct(float voltage) {
-    if (voltage >= ADC_SOIL_DRY_VOLTAGE) return 0.0f;
-    if (voltage <= ADC_SOIL_WET_VOLTAGE) return 100.0f;
-    return ((ADC_SOIL_DRY_VOLTAGE - voltage) / (ADC_SOIL_DRY_VOLTAGE - ADC_SOIL_WET_VOLTAGE)) * 100.0f;
+static float Read_Water_Level(ADC_HandleTypeDef *hadc) {
+    uint32_t sum = 0;
+    for (uint8_t i = 0; i < 10; i++) {
+        HAL_ADC_Start(hadc);
+        if (HAL_ADC_PollForConversion(hadc, 10) == HAL_OK) {
+            sum += HAL_ADC_GetValue(hadc);
+        }
+        HAL_ADC_Stop(hadc);
+    }
+    // Giả sử 0-4095 tương ứng 0-100%
+    float pct = ((float)(sum / 10) / 4095.0f) * 100.0f;
+    return (pct > 100.0f) ? 100.0f : pct;
 }
 /* USER CODE END PFP */
 
@@ -99,6 +100,7 @@ static float Calculate_Soil_Moisture_Pct(float voltage) {
   */
 int main(void)
 {
+
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -106,7 +108,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
- HAL_Init();
+  HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -126,133 +128,159 @@ int main(void)
   MX_RTC_Init();
   MX_TIM2_Init();
   MX_USART1_UART_Init();
-/* USER CODE BEGIN 2 */
+  MX_ADC2_Init();
+  /* USER CODE BEGIN 2 */
   Relay_Init();
   DHT11_Init();
   HAL_ADC_Start(&hadc1);
   UART_Logger_Init(&huart1);
   LOG_I("=== HE THONG TUOI CAY TU DONG KHOT DONG ===");
-/* USER CODE END 2 */
-  /* USER CODE BEGIN 2 */
-<<<<<<< HEAD
-/* USER CODE BEGIN 2 */
-  Soil_Init(&soil, 4000, 1300); 
-  /* USER CODE END 2 */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
-  Soil_Init(&soil, 4000, 1300);
-=======
-  RTC_Init_Module(); // SV2: Khởi tạo giờ 3h45m và lịch tưới
->>>>>>> origin/feature/rtc-clock
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-   // Cứ nửa giây thì đọc cảm biến 1 lần
-    if (HAL_GetTick() - last_time >= 500) {
-        last_time = HAL_GetTick();
+   uint32_t now = HAL_GetTick();
 
-        // Đọc dữ liệu
+    /* ====================================================================
+     * TÁC VỤ 1: ĐA NHIỆM GIAO DIỆN (Chạy liên tục, KHÔNG dùng Delay)
+     * ==================================================================== */
+    BTN_Scan(now);
+    Btn_Event_t evt = BTN_GetEvent();
+    if (evt != BTN_EVT_NONE) {
+        LCD_HandleEvent(&lcd, evt, now);
+    }
+    LCD_Task(&lcd, now);
+    RTC_Process(); // Xử lý nhịp xung 10s ON / 5s OFF
+
+    /* Đồng bộ LCD -> RTC (Nếu người dùng chỉnh giờ trên màn hình) */
+    LCD_Time_t newTime;
+    if (LCD_TimeSaved(&lcd, &newTime)) {
+        RTC_TimeTypeDef sTime = { .Hours = newTime.hour, .Minutes = newTime.minute, .Seconds = newTime.second };
+        HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+        RTC_DateTypeDef sDate = { .Date = newTime.day, .Month = newTime.month, .Year = (uint8_t)(newTime.year - 2000), .WeekDay = RTC_WEEKDAY_MONDAY };
+        HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+        LOG_I("Da cap nhat gio RTC tu LCD");
+    }
+        /* ĐỒNG BỘ LỊCH TỪ LCD SANG RTC */
+        const LCD_Schedule_t* sched1 = LCD_GetSchedule(&lcd, 0);
+        const LCD_Schedule_t* sched2 = LCD_GetSchedule(&lcd, 1);
+        RTC_DatLich1(sched1->hour, sched1->minute, sched1->enable);
+        RTC_DatLich2(sched2->hour, sched2->minute, sched2->enable);
+
+    /* ====================================================================
+     * TÁC VỤ 2: QUÉT CẢM BIẾN & XỬ LÝ LOGIC (Mỗi 1000ms)
+     * ==================================================================== */
+    if (now - last_sensor_time >= 1000) {
+        last_sensor_time = now;
+
+        // 1. Đọc dữ liệu cảm biến
+        dht_status = DHT11_Read(&dht_sensor);
         Soil_Read(&hadc1, &soil);
+        water_level_pct = Read_Water_Level(&hadc2);
 
-        if (soil.status == SOIL_ERROR) {
-            // Rút dây / Chập -> Tắt bơm ngay
-            HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
-        } 
-        else {
-            // Không lỗi thì chạy Hysteresis
-            if (soil.soil_moisture < 40.0f) {
-                // Khô quá -> Bật
-                HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
-            } 
-            else if (soil.soil_moisture > 60.0f) {
-                // Đủ ướt -> Tắt
-                HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
-            }
-        }
-    }
-        
-    /* USER CODE END WHILE */
-  RTC_Process();
-    /* USER CODE BEGIN 3 */
-    // BƯỚC 1: ĐỌC DỮ LIỆU CẢM BIẾN VÀ CẬP NHẬT TRẠNG THÁI
-
-    adc_raw = HAL_ADC_GetValue(&hadc1);
-    adc_voltage = ((float)adc_raw * 3.3f) / 4095.0f;
-    soil_moisture = Calculate_Soil_Moisture_Pct(adc_voltage);
-    dht_status = DHT11_Read(&dht_sensor);
-
-    uint8_t is_water_ok = (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_2) == GPIO_PIN_RESET);
-
-    // BƯỚC 2: KIỂM TRA ĐIỀU KIỆN AN TOÀN
-    
-    // 2.1 Cảm biến bị lỗi hoặc tuột dây 
-    if (dht_status == 0 || adc_voltage < 0.1f || adc_voltage > 3.25f) {
-        Relay_SetState(RELAY_OFF);
-        LOG_E("LOI CAM BIEN: Khong the xac dinh trang thai dat/khong khi tin cay -> TAT BOM AN TOAN.");
-    }
-
-    // 2.2 Bể chứa hết nước / Mực nước quá thấp 
-    else if (!is_water_ok) {
-        Relay_SetState(RELAY_OFF);
-        LOG_E("LOI: Be chua het nuoc hoac muc nuoc qua thap -> KHOA BOM CHONG CHAY KHO.");
-    }
-
-    // 2.3 Cảnh báo đặc biệt chống sốc nhiệt (Nhiệt độ > 38°C)
-    else if (dht_sensor.temperature > 38.0f) {
-        Relay_SetState(RELAY_OFF);
-        LOG_W("CANH BAO SOC NHIET: Nhiet do (%.1f C > 38 C) -> TAT BOM TRANH SOC NHIET CAY!", 
-              dht_sensor.temperature);
-    }
-
-    // BƯỚC 3: ĐIỀU KHIỂN BƠM THEO MỨC ƯU TIÊN (CHỈ CHẠY KHI AN TOÀN)
-
-    else {
         float T = dht_sensor.temperature;
         float H_air = dht_sensor.humidity;
-        float Soil = soil_moisture;
+        float M_soil = soil.soil_moisture;
 
-        // NHÓM 1: ĐÃ ĐẠT ĐỘ ẨM ĐẤT MỤC TIÊU (Soil >= 60%) -> TẮT BƠM
-        if (Soil >= 60.0f) {
+        // 2. Đẩy dữ liệu hiển thị lên LCD
+        LCD_Sensor_t realSensors = {
+            .temp = (uint8_t)T, .humi = (uint8_t)H_air,
+            .soil = (uint8_t)M_soil, .water = (uint8_t)water_level_pct
+        };
+        LCD_UpdateSensor(&lcd, &realSensors);
+
+        // Đẩy giờ RTC lên LCD
+        RTC_TimeTypeDef sTime;
+        if (HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN) == HAL_OK) {
+            RTC_DateTypeDef sDate; HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+            LCD_Time_t currentTime = {
+                .day = (sDate.Date == 0) ? 1 : sDate.Date, .month = (sDate.Month == 0) ? 1 : sDate.Month, .year = 2000 + sDate.Year,
+                .hour = sTime.Hours, .minute = sTime.Minutes, .second = sTime.Seconds
+            };
+            LCD_SetTime(&lcd, &currentTime);
+        }
+
+        /* =================================================================
+         * 3. LOGIC ĐIỀU KHIỂN BƠM THEO CẤP ĐỘ ƯU TIÊN 
+         * ================================================================= */
+        const LCD_Setting_t* set = LCD_GetSetting(&lcd);
+
+        // Lấy ngưỡng động từ cài đặt trên LCD (Mặc định nếu chưa cài: 40% đất, 32C, 30% ẩm)
+        float threshold_low = (float)(set->soil > 0 ? set->soil : 40); 
+        float threshold_high = threshold_low + 20.0f; // Tạo Hysteresis dải 20%
+        if (threshold_high > 100.0f) threshold_high = 100.0f;
+
+        float temp_limit = (float)(set->temp > 0 ? set->temp : 32);
+        float humi_limit = (float)(set->humi > 0 ? set->humi : 30);
+
+        // --- ƯU TIÊN 0: BẢO VỆ PHẦN CỨNG BẮT BUỘC (Cao nhất) ---
+        if (dht_status == 0 || soil.status == SOIL_ERROR) {
             Relay_SetState(RELAY_OFF);
-            LOG_I("Dat dat do am muc tieu (%.1f%% >= 60%%) -> TAT BOM", Soil);
+            RTC_DungTuoi();
+            LOG_E("LOI CAM BIEN: Ngat bom an toan.");
+        }
+        else if (water_level_pct < 10.0f) {
+            Relay_SetState(RELAY_OFF);
+            RTC_DungTuoi();
+            LOG_E("LOI BE NUOC: Muc nuoc %.1f%% < 10%% -> Khoa bom chong chay kho.", water_level_pct);
+        }
+        else if (T > 38.0f) {
+            Relay_SetState(RELAY_OFF);
+            RTC_DungTuoi();
+            LOG_W("CANH BAO DAC BIET: Nhiet do %.1f > 38C -> Tat bom chong soc nhiet!", T);
+        }
+        
+        // --- ƯU TIÊN 1: BƠM THỦ CÔNG (Từ màn hình LCD) ---
+        else if (set->mode == LCD_PUMP_MANUAL) {
+            Relay_SetState(set->pumpOn ? RELAY_ON : RELAY_OFF);
+            LOG_I("MANUAL MODE: Bom dang %s", set->pumpOn ? "BAT" : "TAT");
+        }
+        
+        // --- ƯU TIÊN 2.A: ĐẠT MỤC TIÊU ĐỘ ẨM KHÓA BƠM HẲN ---
+        else if (M_soil >= threshold_high) {
+            Relay_SetState(RELAY_OFF);
+            RTC_DungTuoi();
+            
+            if (T <= temp_limit && H_air >= humi_limit)      LOG_I("M>=%.0f%% -> Tat bom (Khong canh bao)", threshold_high);
+            else if (T <= temp_limit && H_air < humi_limit)  LOG_W("M>=%.0f%% -> Tat bom (CB: Khong khi kho)", threshold_high);
+            else if (T > temp_limit && H_air >= humi_limit)  LOG_W("M>=%.0f%% -> Tat bom (CB: Nhiet do cao)", threshold_high);
+            else                                             LOG_W("M>=%.0f%% -> Tat bom (CB: Nong & Kho)", threshold_high);
         }
 
-        // NHÓM 2: ĐẤT KHÔ (Soil < 40%) -> BẬT BƠM 
-        else if (Soil < 40.0f) {
-            Relay_SetState(RELAY_ON);
-            LOG_I("Dat kho (%.1f%% < 40%%) -> BAT BOM", Soil);
+        // --- ƯU TIÊN 2.B: LỊCH TƯỚI XUNG NHỊP RTC ---
+        else if (RTC_KiemTraPhienTuoiDangChay()) {
+            Relay_State rtc_state = RTC_KiemTraBomDangChay() ? RELAY_ON : RELAY_OFF;
+            Relay_SetState(rtc_state);
+            LOG_I("AUTO-RTC: Chay theo nhip (%s)", rtc_state == RELAY_ON ? "10s ON" : "5s OFF");
         }
 
-        // NHÓM 3: ĐẤT TRUNG BÌNH (40% <= Soil < 60%)
-        else if (T <= 32.0f && H_air >= 30.0f) {
-            Relay_State current_p = Relay_GetState();
-            LOG_I("Tiep tuc theo doi | Dat: %.1f%% (40-60%%) -> GIU TRANG THAI BOM (%s)",
-                  Soil, (current_p == RELAY_ON) ? "DANG BOM" : "TAT BOM");
-        }
-
-        // NHÓM 4: ĐẤT TRUNG BÌNH (40% <= Soil < 60%)
+        // --- ƯU TIÊN 3: LOGIC CẢM BIẾN TỰ ĐỘNG ---
         else {
-            uint8_t is_air_dry = (H_air < 30.0f);
-            uint8_t is_temp_high = (T > 32.0f);
-
-            if (is_air_dry || is_temp_high) {
+            if (M_soil < threshold_low) {
                 Relay_SetState(RELAY_ON);
-
-                if (is_temp_high && is_air_dry) {
-                    LOG_W("Canh bao nong va khong khi kho | Dat: %.1f%% (40-60%%) -> BAT BOM", Soil);
-                } else if (is_temp_high) {
-                    LOG_W("Canh bao nhiet do cao | Dat: %.1f%% (40-60%%) -> BAT BOM", Soil);
-                } else {
-                    LOG_W("Canh bao khong khi kho | Dat: %.1f%% (40-60%%) -> BAT BOM", Soil);
+                if (T <= temp_limit && H_air >= humi_limit)      LOG_I("M<%.0f%% -> Bom (Khong canh bao)", threshold_low);
+                else if (T <= temp_limit && H_air < humi_limit)  LOG_W("M<%.0f%% -> Bom (CB: Khong khi kho)", threshold_low);
+                else if (T > temp_limit && H_air >= humi_limit)  LOG_W("M<%.0f%% -> Bom (CB: Nhiet do cao)", threshold_low);
+                else                                             LOG_W("M<%.0f%% -> Bom (CB: Nong & Kho)", threshold_low);
+            }
+            else { // Vùng Hysteresis (Đang giữa mức thấp và cao)
+                if (T <= temp_limit && H_air >= humi_limit) {
+                    Relay_State current = Relay_GetState();
+                    LOG_I("TH5: M(%.0f-%.0f%%) -> Giu nguyen (%s) (Tiep tuc theo doi)", threshold_low, threshold_high, current == RELAY_ON ? "Bom" : "Tat");
+                }
+                else {
+                    Relay_SetState(RELAY_ON);
+                    if (T <= temp_limit && H_air < humi_limit)       LOG_W("M(%.0f-%.0f%%) -> Bom (CB: Khong khi kho)", threshold_low, threshold_high);
+                    else if (T > temp_limit && H_air >= humi_limit)  LOG_W("M(%.0f-%.0f%%) -> Bom (CB: Nhiet do cao)", threshold_low, threshold_high);
+                    else                                             LOG_W("M(%.0f-%.0f%%) -> Bom (CB: Nong & Kho)", threshold_low, threshold_high);
                 }
             }
         }
     }
-
-    HAL_Delay(2000);
   }
+
   /* USER CODE END 3 */
 }
 
@@ -326,12 +354,12 @@ static void MX_ADC1_Init(void)
   */
   hadc1.Instance = ADC1;
   hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
-  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.NbrOfConversion = 1;
-  if (HAL_ADC_Init(&hadc1) != HAL_OK) 
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -348,6 +376,53 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief ADC2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC2_Init(void)
+{
+
+  /* USER CODE BEGIN ADC2_Init 0 */
+
+  /* USER CODE END ADC2_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC2_Init 1 */
+
+  /* USER CODE END ADC2_Init 1 */
+
+  /** Common config
+  */
+  hadc2.Instance = ADC2;
+  hadc2.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc2.Init.ContinuousConvMode = DISABLE;
+  hadc2.Init.DiscontinuousConvMode = DISABLE;
+  hadc2.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc2.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc2.Init.NbrOfConversion = 1;
+  if (HAL_ADC_Init(&hadc2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_6;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+  if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC2_Init 2 */
+
+  /* USER CODE END ADC2_Init 2 */
 
 }
 
@@ -390,9 +465,9 @@ static void MX_I2C1_Init(void)
   * @param None
   * @retval None
   */
-static void MX_RTC_Init(void)//ham_set_rtc
+static void MX_RTC_Init(void)
 {
-
+  
   /* USER CODE BEGIN RTC_Init 0 */
 
   /* USER CODE END RTC_Init 0 */
@@ -420,22 +495,31 @@ static void MX_RTC_Init(void)//ham_set_rtc
 
   /** Initialize RTC and set the Time and Date
   */
-  sTime.Hours = 0x0;
-  sTime.Minutes = 0x0;
-  sTime.Seconds = 0x0;
-
-  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
+/** Initialize RTC and set the Time and Date ONLY IF first boot
+  */
+  if (HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR1) != 0x32F2)
   {
-    Error_Handler();
-  }
-  DateToUpdate.WeekDay = RTC_WEEKDAY_MONDAY;
-  DateToUpdate.Month = RTC_MONTH_JANUARY;
-  DateToUpdate.Date = 0x1;
-  DateToUpdate.Year = 0x0;
+      sTime.Hours = 0x0;
+      sTime.Minutes = 0x0;
+      sTime.Seconds = 0x0;
 
-  if (HAL_RTC_SetDate(&hrtc, &DateToUpdate, RTC_FORMAT_BCD) != HAL_OK)
-  {
-    Error_Handler();
+      if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
+      {
+        Error_Handler();
+      }
+      
+      DateToUpdate.WeekDay = RTC_WEEKDAY_MONDAY;
+      DateToUpdate.Month = RTC_MONTH_JANUARY;
+      DateToUpdate.Date = 0x1;
+      DateToUpdate.Year = 0x0;
+
+      if (HAL_RTC_SetDate(&hrtc, &DateToUpdate, RTC_FORMAT_BCD) != HAL_OK)
+      {
+        Error_Handler();
+      }
+      
+      /* Lưu dấu ấn vào Backup Register để các lần Reset sau không bị ghi đè giờ */
+      HAL_RTCEx_BKUPWrite(&hrtc, RTC_BKP_DR1, 0x32F2);
   }
   /* USER CODE BEGIN RTC_Init 2 */
 
@@ -540,13 +624,15 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_8, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PA0 PA2 PA3 PA4 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_4;
+  /*Configure GPIO pins : PA0 PA2 PA3 PA4
+                           PA5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_4
+                          |GPIO_PIN_5;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);

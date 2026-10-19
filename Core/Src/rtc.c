@@ -14,6 +14,7 @@ static uint32_t thoi_gian_max_giay = 10;   // Thời gian BẬT bơm mỗi nhị
 static uint32_t thoi_gian_nghi_giay = 5;    // Thời gian TẮT NGHĨ bơm (5s)
 
 // Cấu hình ngắt an toàn: Giới hạn tối đa 1 phiên tưới (Mặc định 15 phút = 900 giây)
+static uint8_t last_triggered_minute = 60; // Lưu vết phút đã kích hoạt (60 là giá trị ảo ban đầu)
 static uint32_t thoi_gian_toida_phien_giay = 70; 
 
 // Quản lý trạng thái
@@ -28,30 +29,21 @@ static LichTuoi_t lichtuoi2 = {3, 48, true};
 
 void RTC_Init_Module(void)
 {
-    RTC_TimeTypeDef sTime = {0};
-    sTime.Hours = 3;
-    sTime.Minutes = 45;
-    sTime.Seconds = 50; 
-    HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-
-    RTC_DateTypeDef sDate = {0};
-    sDate.WeekDay = RTC_WEEKDAY_MONDAY;
-    sDate.Month = RTC_MONTH_JANUARY;
-    sDate.Date = 1;
-    sDate.Year = 26;
-    HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-
     phien_tuoi_dang_chay = false;
     bom_dang_chay = false;
 }
 
 // 1. Kiểm tra điểm hẹn tưới
 bool RTC_KiemTraDenGioTuoi(void) {
-    if (rtc_second == 0) {
+    // Chỉ kiểm tra khi đúng giây 00 VÀ chưa từng kích hoạt trong phút này
+    if (rtc_second == 0 && rtc_minute != last_triggered_minute) {
+
         if (lichtuoi1.enabled && rtc_hour == lichtuoi1.hour && rtc_minute == lichtuoi1.minute) {
+            last_triggered_minute = rtc_minute; // Lưu vết phút đã kích hoạt
             return true;
         }
         if (lichtuoi2.enabled && rtc_hour == lichtuoi2.hour && rtc_minute == lichtuoi2.minute) {
+            last_triggered_minute = rtc_minute; // Lưu vết phút đã kích hoạt
             return true;
         }
     }

@@ -1,6 +1,4 @@
 {
-<<<<<<< HEAD
-<<<<<<< HEAD
     "version": "0.2.0",
     "configurations": [
         {
@@ -10,32 +8,10 @@
             "servertype": "openocd",
             "executable": "build/stm32-smart-irrigation.elf",
             "svdFile": "${workspaceFolder}/STM32F103.svd",
-=======
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "STM32F103 - OpenOCD",
-            "type": "cortex-debug",
-            "request": "launch",
-            "cwd": "${workspaceFolder}",
-            "executable": "${workspaceFolder}/build/stm32-smart-irrigation.elf",
-            "servertype": "openocd",
-            "serverpath": "C:/Users/Admin/Desktop/ungdungvs/xpack-openocd-0.12.0-7/bin/openocd.exe",
-            "gdbPath": "D:/STM32CubeCLT_1.22.0/GNU-tools-for-STM32/bin/arm-none-eabi-gdb.exe",
->>>>>>> origin/feature/rtc-clock
             "configFiles": [
                 "interface/stlink.cfg",
                 "target/stm32f1x.cfg"
             ],
-<<<<<<< HEAD
-=======
-            "searchDir": [
-                "C:/Users/Admin/Desktop/ungdungvs/xpack-openocd-0.12.0-7/openocd/scripts"
-            ],
-            "openOCDPreConfigLaunchCommands": [
-                "set CPUTAPID 0x00000000"
-            ],
->>>>>>> origin/feature/rtc-clock
             "liveWatch": {
                 "enabled": true,
                 "samplesPerSecond": 4
@@ -43,29 +19,4 @@
             "runToEntryPoint": "main"
         }
     ]
-<<<<<<< HEAD
-=======
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Debug STM32F103",
-      "cwd": "${workspaceFolder}",
-      "executable": "${workspaceFolder}/build/stm32-smart-irrigation.elf",
-      "request": "launch",
-      "type": "cortex-debug",
-      "servertype": "openocd",
-      "configFiles": [
-        "interface/stlink.cfg",
-        "target/stm32f1x.cfg"
-      ],
-      "runToEntryPoint": "main",
-      "liveWatch": {
-        "enabled": true,
-        "samplesPerSecond": 4
-      }
-    }
-  ]
->>>>>>> origin/feature/soil-sensor
-=======
->>>>>>> origin/feature/rtc-clock
 }

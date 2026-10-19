@@ -49,12 +49,22 @@ static uint8_t DHT11_StartSignal(void) {
 
 static uint8_t DHT11_ReadByte(void) {
     uint8_t i, data = 0;
+    uint32_t timeout; // Biến chống treo
+    
     for (i = 0; i < 8; i++) {
-        while (!(HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN)));
+        timeout = 10000;
+        while (!(HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN))) {
+            if (--timeout == 0) return 0; // Thoát nếu kẹt ở mức 0
+        }
+        
         delay_us(40);
+        
         if (HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN)) {
             data |= (1 << (7 - i));
-            while (HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN));
+            timeout = 10000;
+            while (HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN)) {
+                if (--timeout == 0) return 0; // Thoát nếu kẹt ở mức 1
+            }
         }
     }
     return data;

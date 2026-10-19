@@ -11,38 +11,41 @@ void Soil_Init(SoilSensor *s, uint32_t dry, uint32_t wet) {
 
 void Soil_Read(ADC_HandleTypeDef *hadc, SoilSensor *s) {
     uint32_t sum = 0;
-
-    //  Lọc trung bình 50 mẫu 
+    uint8_t valid_samples = 0;
+    
+    // Lọc trung bình 50 mẫu, có kiểm tra mã lỗi HAL
     for (uint8_t i = 0; i < 50; i++) {
         HAL_ADC_Start(hadc);
-        HAL_ADC_PollForConversion(hadc, 10); // Chờ  10ms
-        sum += HAL_ADC_GetValue(hadc);
+        if (HAL_ADC_PollForConversion(hadc, 10) == HAL_OK) { // Có timeout 10ms
+            sum += HAL_ADC_GetValue(hadc);
+            valid_samples++;
+        }
         HAL_ADC_Stop(hadc);
     }
-    s->adc_raw = sum / 50;
 
-    //  Tính điện áp 
+    if (valid_samples == 0) {
+        s->status = SOIL_ERROR; // Lỗi phần cứng ADC
+        return;
+    }
+
+    s->adc_raw = sum / valid_samples;
     s->adc_voltage = ((float)s->adc_raw * 3.3f) / 4095.0f;
 
-    //  Bắt lỗi ngắt kết nối hoặc chập mạch
-    if (s->adc_raw < 100 || s->adc_raw > 4050) {
+    // SỬA: Chỉ báo lỗi khi ADC = 0 (chập GND) hoặc tụt dây quá mức
+    if (s->adc_raw < 10) { 
         s->status = SOIL_ERROR;
         s->soil_moisture = 0.0f; 
-        return; // Bị lỗi thì dừng hàm ở đây luôn, không tính % nữa
+        return;
     } else {
         s->status = SOIL_OK;
     }
 
-    //  Tính % độ ẩm 
+    // Tính % độ ẩm (Giữ nguyên thuật toán của bạn)
     float moisture = 0.0f;
     if (s->dry > s->wet) {
-        // Công thức: (Mốc khô - ADC đo được) / Khoảng cách (Khô - Ướt) * 100
         moisture = (float)(s->dry - s->adc_raw) / (float)(s->dry - s->wet) * 100.0f;
     }
-
-    //  Chặn trên/dưới để số không bị âm hoặc vượt 100%
     if (moisture < 0.0f) moisture = 0.0f;
     if (moisture > 100.0f) moisture = 100.0f;
-
     s->soil_moisture = moisture;
 }
