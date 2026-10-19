@@ -63,7 +63,9 @@ Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_tim_ex.c \
 Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_uart.c \
 Core/Src/system_stm32f1xx.c \
 Core/Src/sysmem.c \
+Core/Src/soil_sensor.c \
 Core/Src/syscalls.c
+
 
 # ASM sources
 ASM_SOURCES =  \

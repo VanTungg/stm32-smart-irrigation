@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
     "version": "0.2.0",
     "configurations": [
         {
@@ -19,4 +20,26 @@
             "runToEntryPoint": "main"
         }
     ]
+=======
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug STM32F103",
+      "cwd": "${workspaceFolder}",
+      "executable": "${workspaceFolder}/build/stm32-smart-irrigation.elf",
+      "request": "launch",
+      "type": "cortex-debug",
+      "servertype": "openocd",
+      "configFiles": [
+        "interface/stlink.cfg",
+        "target/stm32f1x.cfg"
+      ],
+      "runToEntryPoint": "main",
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      }
+    }
+  ]
+>>>>>>> origin/feature/soil-sensor
 }
