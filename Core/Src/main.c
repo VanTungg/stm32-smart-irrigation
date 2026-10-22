@@ -134,6 +134,7 @@ int main(void)
   DHT11_Init();
   HAL_ADC_Start(&hadc1);
   UART_Logger_Init(&huart1);
+  LCD_Init(&lcd, &hi2c1, 0x20, HAL_GetTick());
   LOG_I("=== HE THONG TUOI CAY TU DONG KHOT DONG ===");
   /* USER CODE END 2 */
 

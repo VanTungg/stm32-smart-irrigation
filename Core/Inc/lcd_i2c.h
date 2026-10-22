@@ -35,7 +35,7 @@ extern "C" {
 /* Địa chỉ I2C 7 bit của module PCF8574: thường là 0x27 (PCF8574) hoặc 0x3F (PCF8574A).
  * Hàm HAL cần địa chỉ đã DỊCH TRÁI 1 BIT -> dùng macro LCD_I2C_ADDR_HAL() để đổi,
  * tránh nhầm lẫn: toàn dự án chỉ truyền địa chỉ 7 bit vào LCD_Init().                 */
-#define LCD_I2C_ADDR_7BIT       0x27U
+#define LCD_I2C_ADDR_7BIT       0x20
 #define LCD_I2C_ADDR_HAL(a7)    ((uint16_t)((a7) << 1))
 
 #define LCD_I2C_TIMEOUT_MS      5U      /* Thời gian chờ tối đa cho 1 lần truyền I2C  */
